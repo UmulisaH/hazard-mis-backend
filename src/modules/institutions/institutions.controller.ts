@@ -18,7 +18,6 @@ import { UpdateInstitutionDto } from './dto/update-institution.dto';
 import { InstitutionsService } from './institutions.service';
 
 @Controller()
-@UseGuards(AuthGuard)
 export class InstitutionsController {
   constructor(private readonly institutionsService: InstitutionsService) {}
 
@@ -29,11 +28,13 @@ export class InstitutionsController {
     return this.institutionsService.createInstitution(dto);
   }
 
+  // Public so the registration form can load institution options before login.
   @Get('institutions')
   listInstitutions() {
     return this.institutionsService.listInstitutions();
   }
 
+  @UseGuards(AuthGuard)
   @Get('institutions/:id')
   getInstitution(@Param('id') id: string) {
     return this.institutionsService.getInstitution(id);
@@ -63,11 +64,13 @@ export class InstitutionsController {
     return this.institutionsService.createDepartment(dto);
   }
 
+  @UseGuards(AuthGuard)
   @Get('departments')
   listDepartments() {
     return this.institutionsService.listDepartments();
   }
 
+  @UseGuards(AuthGuard)
   @Get('departments/:id')
   getDepartment(@Param('id') id: string) {
     return this.institutionsService.getDepartment(id);
