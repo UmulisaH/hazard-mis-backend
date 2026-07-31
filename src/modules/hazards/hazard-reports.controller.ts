@@ -5,6 +5,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -18,6 +19,8 @@ import { CreateCorrectiveActionDto } from './dto/create-corrective-action.dto';
 import { CreateHazardReportDto } from './dto/create-hazard-report.dto';
 import { InvestigateHazardReportDto } from './dto/investigate-hazard-report.dto';
 import { UpdateCorrectiveActionDto } from './dto/update-corrective-action.dto';
+import { UpdateHazardReportStatusDto } from './dto/update-hazard-report-status.dto';
+import { ListHazardReportsQueryDto } from './dto/list-hazard-reports-query.dto';
 import { HazardReportsService } from './hazard-reports.service';
 
 @Controller('hazard-reports')
@@ -26,8 +29,26 @@ export class HazardReportsController {
 
   @UseGuards(AuthGuard)
   @Get()
-  findAll(@Req() request: { user: AuthenticatedUser }) {
-    return this.hazardReportsService.findHazardReportsForUser(request.user);
+  findAll(
+    @Req() request: { user: AuthenticatedUser },
+    @Query() query: ListHazardReportsQueryDto,
+  ) {
+    return this.hazardReportsService.findHazardReportsForUser(
+      request.user,
+      query,
+    );
+  }
+
+  @UseGuards(AuthGuard)
+  @Get(':id')
+  findOne(
+    @Param('id') hazardReportId: string,
+    @Req() request: { user: AuthenticatedUser },
+  ) {
+    return this.hazardReportsService.findHazardReportForUser(
+      hazardReportId,
+      request.user,
+    );
   }
 
   @UseGuards(AuthGuard)
@@ -43,7 +64,7 @@ export class HazardReportsController {
   }
 
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('admin', 'safety_officer')
+  @Roles('manager')
   @Patch(':id/assign')
   assignOfficer(
     @Param('id') hazardReportId: string,
@@ -57,7 +78,23 @@ export class HazardReportsController {
     );
   }
 
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('manager')
+  @Patch(':id/status')
+  updateStatus(
+    @Param('id') hazardReportId: string,
+    @Body() updateStatusDto: UpdateHazardReportStatusDto,
+    @Req() request: { user: AuthenticatedUser },
+  ) {
+    return this.hazardReportsService.updateStatus(
+      hazardReportId,
+      updateStatusDto,
+      request.user,
+    );
+  }
+
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('manager', 'safety_officer')
   @Post(':id/investigate')
   investigate(
     @Param('id') hazardReportId: string,
@@ -71,7 +108,8 @@ export class HazardReportsController {
     );
   }
 
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('manager', 'safety_officer')
   @Post(':id/corrective-actions')
   addCorrectiveAction(
     @Param('id') hazardReportId: string,
@@ -85,7 +123,8 @@ export class HazardReportsController {
     );
   }
 
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('manager', 'safety_officer')
   @Patch(':id/corrective-actions/:correctiveActionId')
   updateCorrectiveAction(
     @Param('id') hazardReportId: string,
@@ -101,7 +140,8 @@ export class HazardReportsController {
     );
   }
 
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('manager', 'safety_officer')
   @Post(':id/close')
   closeReport(
     @Param('id') hazardReportId: string,

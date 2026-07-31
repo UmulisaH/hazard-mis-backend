@@ -19,7 +19,7 @@ import { InvestigationDetail } from './modules/hazards/entities/investigation-de
 import { SeverityLevel } from './modules/hazards/entities/severity-level.entity';
 import { Department } from './modules/institutions/entities/department.entity';
 import { Institution } from './modules/institutions/entities/institution.entity';
-import { Employee } from './modules/users/entities/employee.entity';
+import { Employee, UserRole } from './modules/users/entities/employee.entity';
 
 const logger = new Logger('Seed');
 
@@ -132,8 +132,7 @@ async function seed() {
         fullName: 'John Reporter',
         jobTitle: 'Operator',
         phone: '+250788100001',
-        isSafetyOfficer: false,
-        isAdmin: false,
+        role: UserRole.Reporter,
         department: assemblyDepartment,
       },
       {
@@ -142,8 +141,7 @@ async function seed() {
         fullName: 'Sarah Officer',
         jobTitle: 'Safety Officer',
         phone: '+250788100002',
-        isSafetyOfficer: true,
-        isAdmin: false,
+        role: UserRole.SafetyOfficer,
         department: assemblyDepartment,
       },
       {
@@ -152,8 +150,16 @@ async function seed() {
         fullName: 'Alice Admin',
         jobTitle: 'Administrator',
         phone: '+250788100003',
-        isSafetyOfficer: true,
-        isAdmin: true,
+        role: UserRole.Admin,
+        department: qaDepartment,
+      },
+      {
+        email: 'manager@hazardmis.local',
+        passwordHash,
+        fullName: 'Michael Manager',
+        jobTitle: 'Operations Manager',
+        phone: '+250788100004',
+        role: UserRole.Manager,
         department: qaDepartment,
       },
     ];
@@ -165,6 +171,10 @@ async function seed() {
 
       if (!existing) {
         await employeeRepository.save(employeeRepository.create(employeeSeed));
+      } else {
+        existing.role = employeeSeed.role;
+        existing.department = employeeSeed.department;
+        await employeeRepository.save(existing);
       }
     }
 
@@ -225,7 +235,7 @@ async function seed() {
         hazardCategory: chemical,
         severityLevel: critical,
         reporter: admin,
-        assignedOfficer: admin,
+        assignedOfficer: safetyOfficer,
         recurrenceCount: 1,
         aiPriority: HazardPriority.High,
         aiConfidence: '0.91',

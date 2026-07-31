@@ -1,9 +1,8 @@
-import { Transform } from 'class-transformer';
-import { IsBoolean, IsOptional } from 'class-validator';
+import { IsEnum, IsOptional } from 'class-validator';
+import { UserRole } from '../entities/employee.entity';
 
 export class ListUsersQueryDto {
   @IsOptional()
-  @Transform(({ value }) => value === 'true')
-  @IsBoolean()
-  isSafetyOfficer?: boolean;
+  @IsEnum(UserRole)
+  role?: UserRole;
 }

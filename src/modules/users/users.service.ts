@@ -7,7 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Department } from '../institutions/entities/department.entity';
-import { Employee } from './entities/employee.entity';
+import { Employee, UserRole } from './entities/employee.entity';
 import { RegisterEmployeeDto } from './dto/register-employee.dto';
 import { UpdateUserRoleDto } from './dto/update-user-role.dto';
 
@@ -15,8 +15,7 @@ export type SafeUserListItem = {
   id: string;
   fullName: string;
   jobTitle: string;
-  isAdmin: boolean;
-  isSafetyOfficer: boolean;
+  role: UserRole;
 };
 
 @Injectable()
@@ -97,7 +96,7 @@ export class UsersService {
   }
 
   async findAllSafeUsers(
-    isSafetyOfficer?: boolean,
+    role?: UserRole,
   ): Promise<SafeUserListItem[]> {
     const queryBuilder = this.employeeRepository
       .createQueryBuilder('employee')
@@ -105,19 +104,12 @@ export class UsersService {
         'employee.id AS "id"',
         'employee.fullName AS "fullName"',
         'employee.jobTitle AS "jobTitle"',
-        'employee.isAdmin AS "isAdmin"',
-        'employee.isSafetyOfficer AS "isSafetyOfficer"',
+        'employee.role AS "role"',
       ])
       .orderBy('employee.fullName', 'ASC');
 
-    if (isSafetyOfficer === true) {
-      queryBuilder
-        .andWhere('employee.isSafetyOfficer = :isSafetyOfficer', {
-          isSafetyOfficer: true,
-        })
-        .andWhere('employee.isAdmin = :isAdmin', {
-          isAdmin: false,
-        });
+    if (role) {
+      queryBuilder.andWhere('employee.role = :role', { role });
     }
 
     return queryBuilder.getRawMany<SafeUserListItem>();
@@ -136,11 +128,7 @@ export class UsersService {
       throw new NotFoundException('Employee not found.');
     }
 
-    employee.isAdmin = updateUserRoleDto.isAdmin;
-
-    if (updateUserRoleDto.isAdmin) {
-      employee.isSafetyOfficer = false;
-    }
+    employee.role = updateUserRoleDto.role;
 
     const savedEmployee = await this.employeeRepository.save(employee);
     const employeeProfile = await this.findProfileById(savedEmployee.id);

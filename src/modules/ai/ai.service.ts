@@ -7,7 +7,7 @@ import { PredictionResult } from './interfaces/training-record.interface';
 type RandomForestClassifierInstance = {
   train(X: number[][], y: number[]): void;
   predict(X: number[][]): number[];
-  predictProbability(X: number[][]): number[][];
+  predictProbability(X: number[][], label: number): number[];
   toJSON(): unknown;
 };
 
@@ -16,6 +16,7 @@ type RandomForestClassifierStatic = {
     nEstimators: number;
     maxDepth: number;
     seed: number;
+    noOOB?: boolean;
   }): RandomForestClassifierInstance;
   load(json: unknown): RandomForestClassifierInstance;
 };
@@ -25,6 +26,8 @@ const { RandomForestClassifier } = require('ml-random-forest') as {
 };
 
 interface TrainingRow {
+  title: string;
+  description: string;
   hazard_category: string;
   severity_level: string;
   recurrence_count: number;
@@ -43,7 +46,14 @@ export class AiService implements OnModuleInit {
   private readonly logger = new Logger(AiService.name);
   private classifier: RandomForestClassifierInstance | null = null;
   private modelMeta: ModelMetadata | null = null;
-  private readonly modelVersion = 'v1.0';
+  private readonly modelVersion = 'v2.0';
+  private readonly featureCount = 6;
+  // The training set contains more low-risk than high-risk outcomes. Using
+  // the library's default 0.50 majority-vote boundary made every valid
+  // request classify as low, even when the positive-class probability was
+  // materially high. This threshold is intentionally configurable so it can
+  // be tuned against reviewed operational outcomes later.
+  private readonly highPriorityProbabilityThreshold = 0.35;
   private readonly MODEL_PATH = path.join(
     process.cwd(),
     'models',
@@ -86,6 +96,15 @@ export class AiService implements OnModuleInit {
     if (fs.existsSync(this.MODEL_PATH)) {
       try {
         const parsedModel = JSON.parse(fs.readFileSync(this.MODEL_PATH, 'utf8'));
+        const storedFeatureCount = Number(
+          parsedModel.featureCount ?? parsedModel.baseModel?.n ?? 0,
+        );
+        if (storedFeatureCount !== this.featureCount) {
+          throw new Error(
+            `Model feature count ${storedFeatureCount} does not match expected ${this.featureCount}`,
+          );
+        }
+
         this.classifier = RandomForestClassifier.load(parsedModel);
         this.modelMeta = {
           version: parsedModel.version ?? this.modelVersion,
@@ -128,6 +147,8 @@ export class AiService implements OnModuleInit {
           record.severity_level,
           record.recurrence_count,
           Boolean(record.is_weekend),
+          record.title,
+          record.description,
         ),
       );
       const yTrain = records.map((record) => record.actual_outcome);
@@ -137,8 +158,9 @@ export class AiService implements OnModuleInit {
       const classifier = new RandomForestClassifier({
         nEstimators: 100,
         maxDepth: 10,
-        seed: 42,
-      });
+          seed: 42,
+          noOOB: true,
+        });
 
       classifier.train(xTrain, yTrain);
 
@@ -147,6 +169,7 @@ export class AiService implements OnModuleInit {
       const storedModel = {
         ...modelJSON,
         version: this.modelVersion,
+        featureCount: this.featureCount,
         trainedAt,
         totalRecords: records.length,
       };
@@ -204,6 +227,8 @@ export class AiService implements OnModuleInit {
           const isWeekend = Number.parseInt(data.is_weekend ?? '0', 10);
 
           results.push({
+            title: data.title ?? '',
+            description: data.description ?? '',
             hazard_category: data.hazard_category ?? '',
             severity_level: data.severity_level ?? '',
             recurrence_count: Number.isFinite(recurrenceCount)
@@ -233,17 +258,59 @@ export class AiService implements OnModuleInit {
     return this.severityLevelMap[severityLevel] ?? 0;
   }
 
+  private extractTextFeatures(title = '', description = ''): [number, number] {
+    const text = `${title} ${description}`.toLowerCase();
+    const riskTerms: Array<[RegExp, number]> = [
+      [/\b(exposed|live|sparks?|smoke|fire|flame|explosion|flammable)\b/g, 2],
+      [/\b(spill|leak|toxic|chemical|solvent|pesticide|gas|contamination)\b/g, 2],
+      [/\b(injury|unsafe|faulty|broken|loose|missing|unguarded|blocked)\b/g, 1],
+      [/\b(fall|electrocution|collapse|fume|fungal|infection)\b/g, 2],
+    ];
+    const urgencyTerms: RegExp[] = [
+      /\b(urgent|urgently|immediate|immediately|emergency|critical|serious)\b/g,
+      /\b(danger|dangerous|high[- ]risk|significant|harm)\b/g,
+      /\b(repeated|recurring|multiple|again|reported)\b/g,
+      /\b(closure|close|repair|fixing|mitigation)\b/g,
+    ];
+
+    const countMatches = (pattern: RegExp): number =>
+      text.match(pattern)?.length ?? 0;
+
+    const riskScore = Math.min(
+      10,
+      riskTerms.reduce(
+        (score, [pattern, weight]) => score + countMatches(pattern) * weight,
+        0,
+      ),
+    );
+    const urgencyScore = Math.min(
+      8,
+      urgencyTerms.reduce((score, pattern) => score + countMatches(pattern), 0),
+    );
+
+    return [riskScore, urgencyScore];
+  }
+
   private encodeFeatures(
     hazardCategory: string,
     severityLevel: string,
     recurrenceCount: number,
     isWeekend: boolean,
-  ): [number, number, number, number] {
+    title = '',
+    description = '',
+  ): [number, number, number, number, number, number] {
+    const [textRiskScore, textUrgencyScore] = this.extractTextFeatures(
+      title,
+      description,
+    );
+
     return [
       this.encodeHazardCategory(hazardCategory),
       this.encodeSeverityLevel(severityLevel),
       Number.isFinite(recurrenceCount) ? recurrenceCount : 0,
       isWeekend ? 1 : 0,
+      textRiskScore,
+      textUrgencyScore,
     ];
   }
 
@@ -252,6 +319,8 @@ export class AiService implements OnModuleInit {
     severityLevel: string,
     recurrenceCount: number,
     isWeekend: boolean,
+    title = '',
+    description = '',
   ): PredictionResult {
     if (this.classifier) {
       const featureArray = this.encodeFeatures(
@@ -259,18 +328,27 @@ export class AiService implements OnModuleInit {
         severityLevel,
         recurrenceCount,
         isWeekend,
+        title,
+        description,
       );
 
-      const predictions = this.classifier.predict([featureArray]);
-      const probabilities = this.classifier.predictProbability([featureArray]);
-      const predictedClass = Number(Array.isArray(predictions) ? predictions[0] : predictions);
-      const classProbabilities = Array.isArray(probabilities)
-        ? probabilities[0] ?? []
-        : [];
-
-      const priority: 'High' | 'Low' = predictedClass === 1 ? 'High' : 'Low';
-      const confidenceRaw =
-        predictedClass === 1 ? classProbabilities[1] ?? 0 : classProbabilities[0] ?? 0;
+      // ml-random-forest's predictProbability API returns the probability for
+      // the label supplied as its second argument. It does not return an
+      // array containing one probability per class.
+      const highProbabilityValues = this.classifier.predictProbability(
+        [featureArray],
+        1,
+      );
+      const highProbability = Number(highProbabilityValues[0] ?? 0);
+      const safeHighProbability = Number.isFinite(highProbability)
+        ? Math.min(1, Math.max(0, highProbability))
+        : 0;
+      const isHighPriority =
+        safeHighProbability >= this.highPriorityProbabilityThreshold;
+      const priority: 'High' | 'Low' = isHighPriority ? 'High' : 'Low';
+      const confidenceRaw = isHighPriority
+        ? safeHighProbability
+        : 1 - safeHighProbability;
       const confidence = Math.round(confidenceRaw * 100) / 100;
 
       return { priority, confidence };
@@ -282,6 +360,8 @@ export class AiService implements OnModuleInit {
       severityLevel,
       recurrenceCount,
       isWeekend,
+      title,
+      description,
     );
   }
 
@@ -290,6 +370,8 @@ export class AiService implements OnModuleInit {
     severityLevel: string,
     recurrenceCount: number,
     isWeekend: boolean,
+    title = '',
+    description = '',
   ): PredictionResult {
     const severityWeights: Record<string, number> = {
       Low: 1,
@@ -311,7 +393,16 @@ export class AiService implements OnModuleInit {
     const severityWeight = severityWeights[severityLevel] ?? 2;
     const categoryWeight = categoryMap[hazardCategory] ?? 3;
 
-    let score = severityWeight * 5 + recurrenceCount * 3 + categoryWeight;
+    const [textRiskScore, textUrgencyScore] = this.extractTextFeatures(
+      title,
+      description,
+    );
+    let score =
+      severityWeight * 5 +
+      recurrenceCount * 3 +
+      categoryWeight +
+      textRiskScore * 2 +
+      textUrgencyScore;
 
     if (isWeekend) {
       score += 2;

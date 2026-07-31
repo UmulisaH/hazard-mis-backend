@@ -24,8 +24,7 @@ export class AuthService {
       access_token: await this.signToken(
         employee.id,
         employee.email,
-        employee.isSafetyOfficer,
-        employee.isAdmin,
+        employee.role,
       ),
       employee,
     };
@@ -63,8 +62,7 @@ export class AuthService {
       access_token: await this.signToken(
         employee.id,
         employee.email,
-        employee.isSafetyOfficer,
-        employee.isAdmin,
+        employee.role,
       ),
       employee: employeeProfile,
     };
@@ -73,14 +71,12 @@ export class AuthService {
   private async signToken(
     employeeId: string,
     email: string,
-    isSafetyOfficer: boolean,
-    isAdmin: boolean,
+    role: import('../users/entities/employee.entity').UserRole,
   ): Promise<string> {
     const payload: JwtPayload = {
       sub: employeeId,
       email,
-      is_safety_officer: isSafetyOfficer,
-      is_admin: isAdmin,
+      role,
     };
 
     return this.jwtService.signAsync(payload);

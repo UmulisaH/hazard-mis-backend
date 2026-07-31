@@ -10,6 +10,13 @@ import {
 } from 'typeorm';
 import { Department } from '../../institutions/entities/department.entity';
 
+export enum UserRole {
+  Admin = 'admin',
+  Manager = 'manager',
+  SafetyOfficer = 'safety_officer',
+  Reporter = 'reporter',
+}
+
 @Entity({ name: 'employees' })
 export class Employee {
   @PrimaryGeneratedColumn('uuid')
@@ -36,11 +43,8 @@ export class Employee {
   @Column({ type: 'varchar', length: 50 })
   phone!: string;
 
-  @Column({ name: 'is_safety_officer', type: 'boolean', default: false })
-  isSafetyOfficer!: boolean;
-
-  @Column({ name: 'is_admin', type: 'boolean', default: false })
-  isAdmin!: boolean;
+  @Column({ type: 'enum', enum: UserRole, default: UserRole.Reporter })
+  role!: UserRole;
 
   @ManyToOne(() => Department, { onDelete: 'RESTRICT', nullable: false })
   @JoinColumn({ name: 'department_id' })

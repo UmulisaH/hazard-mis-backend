@@ -1,6 +1,7 @@
-import { IsBoolean } from 'class-validator';
+import { IsEnum } from 'class-validator';
+import { UserRole } from '../entities/employee.entity';
 
 export class UpdateUserRoleDto {
-  @IsBoolean()
-  isAdmin!: boolean;
+  @IsEnum(UserRole)
+  role!: UserRole;
 }

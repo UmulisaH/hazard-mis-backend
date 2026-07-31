@@ -19,18 +19,20 @@ export class AiController {
   }
 
   @Post('predict')
-  @Roles('admin', 'safety_officer')
+  @Roles('manager', 'safety_officer')
   predict(@Body() request: PredictionRequestDto): PredictionResponseDto {
     const result = this.aiService.predictPriority(
       request.hazardCategory,
       request.severityLevel,
       request.recurrenceCount,
       request.isWeekend,
+      request.title,
+      request.description,
     );
 
     return {
       ...result,
-      modelVersion: 'v1.0',
+      modelVersion: this.aiService.getModelStatus().version ?? 'v2.0',
     };
   }
 

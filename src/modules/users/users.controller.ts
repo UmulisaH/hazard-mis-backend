@@ -21,10 +21,10 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('admin', 'safety_officer')
+  @Roles('admin', 'manager')
   @Get()
   async findAll(@Query() query: ListUsersQueryDto) {
-    return this.usersService.findAllSafeUsers(query.isSafetyOfficer);
+    return this.usersService.findAllSafeUsers(query.role);
   }
 
   @UseGuards(AuthGuard)
